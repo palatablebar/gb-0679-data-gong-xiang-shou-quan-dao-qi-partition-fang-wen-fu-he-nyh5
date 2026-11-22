@@ -44,10 +44,12 @@ def create_app():
     def archive(run_id):
         from app.archive import build_archive
         run=store.get(run_id)
-        return application.response_class(build_archive(run),mimetype="text/csv",headers={"Content-Disposition":'attachment; filename="evidence.csv"'})
+        return application.response_class(build_archive(run,exceptions=True),mimetype="text/csv",headers={"Content-Disposition":'attachment; filename="evidence.csv"'})
     for index,(slug,title) in enumerate(MODULES,1):
         module=importlib.import_module(f"app.modules.m{index}_{slug}.handler")
         application.register_blueprint(module.bp)
+    from app.delegations.handler import bp as exceptions_bp
+    application.register_blueprint(exceptions_bp)
     register_pages(application)
     return application
 app=create_app()

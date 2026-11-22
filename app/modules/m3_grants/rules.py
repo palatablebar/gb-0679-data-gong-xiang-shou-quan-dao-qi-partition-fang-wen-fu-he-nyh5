@@ -8,13 +8,16 @@ def validate_grants(grants):
         if g["id"] in ids or instant(g["start"])>=instant(g["end"]) or g["effect"] not in {"allow","deny"} or g["from_partition"]>=g["to_partition"]:raise DomainError("BAD_GRANT","授权版本无效")
         ids.add(g["id"])
     return grants
+def active_grants(grants,principal,resource,at):
+    "统一生效窗判定：授权[start,end)半开，到期时刻立即失效。代理例外复核复用本函数。"
+    return [g for g in grants if g["principal"]==principal and g["resource"]==resource and instant(g["start"])<=at<instant(g["end"])]
 def evaluate(rows,context):
     grants=validate_grants(context.get("parameters",{}).get("grants",GRANTS));good=[];bad=[]
     for row in rows:
         try:
             at=instant(row["access_time"]);reported=number(row["reported"])
             if reported not in {0,1}:raise DomainError("BAD_OBSERVED","报送判定必须为0或1")
-            active=[g for g in grants if g["principal"]==row["principal"] and g["resource"]==row["resource"] and instant(g["start"])<=at<instant(g["end"])]
+            active=active_grants(grants,row["principal"],row["resource"],at)
             good.append({**row,"at":at.isoformat(),"candidates":active,"candidate_count":len(active),"reported":str(reported)})
         except (DomainError,KeyError) as e:bad.append(reject(row,getattr(e,"code","MISSING_FIELD"),str(e)))
     return {"rows":good,"quarantine":bad,"metrics":{"active_hits":sum(r["candidate_count"] for r in good),"grant_versions":len(grants)}}

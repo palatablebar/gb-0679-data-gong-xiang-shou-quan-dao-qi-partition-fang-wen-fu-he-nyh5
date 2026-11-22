@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block heading %}代理例外复核{% endblock %}
+{% block topbar_actions %}{% if selected %}<span class="pill pill--{{selected.decision}}">{{selected.status_label}}</span><button id="publish">提交判断</button><a class="btn" href="/api/exceptions/{{selected.exception_id}}/archive">审计证据</a>{% endif %}{% endblock %}
+{% block kpis %}
+<div class="kpis kpis--exception">
+  {% for j in judgments %}
+  <a class="kpi {{'kpi--active' if selected and j.exception_id==selected.exception_id else ''}}" href="/exceptions?id={{j.exception_id}}">
+    <span>{{j.exception_id}} · {{j.principal}} / {{j.partition}}</span>
+    <b class="is-{{j.decision}}">{{j.status_label}}</b>
+    <small>责任：{{j.responsible or '—'}}</small>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}
+{% block command %}{% endblock %}
+{% block terminal %}
+{% if selected %}
+<div class="grid">
+  <section class="panel">
+    <div class="panel__head"><h2>$ exception --judgment</h2><span>{{selected.exception_id}} · 内容摘要 {{selected.content_sha256[:12]}}</span></div>
+    <div class="panel__body">
+      <p class="verdict is-{{selected.decision}}">唯一生效判断：<b>{{selected.status_label}}</b>（{{selected.decision}}）</p>
+      <div class="metric"><span>批准人原文</span><b>{{selected.approver_written or '—'}}</b></div>
+      <div class="metric"><span>实际代理人</span><b>{{selected.delegate}}</b></div>
+      <div class="metric"><span>生效责任归属</span><b>{{selected.responsible or '未裁定'}}</b></div>
+      <div class="metric"><span>依据登记</span><b>{{selected.basis|join(' / ') or '—'}}</b></div>
+      <div class="metric"><span>原因</span><b>{{selected.reasons|join(' / ')}}</b></div>
+      <div class="metric"><span>原始材料摘要</span><b>{{selected.checks.archive.material_sha256[:16]}}</b></div>
+      {% if selected.stored_version %}<div class="metric"><span>已存版本</span><b>v{{selected.stored_version}} · 已落库判断</b></div>{% else %}<div class="metric"><span>已存版本</span><b>未提交 · 现算</b></div>{% endif %}
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>$ checks --four-views</h2><span>同源判断</span></div>
+    <div class="panel__body tree">
+      {% set c=selected.checks %}
+      <p><b>权限核对</b><small>覆盖：{{'是' if c.permission.basis else '否'}} · 登记 {{c.permission.basis|join(' / ') or '无'}} · 负责人 {{c.permission.owners|join(' / ') or '—'}}</small></p>
+      <p><b>规则冲突</b><small>{{'已裁决' if c.conflict.evaluated else '未触发'}} · 允许 {{c.conflict.allow_rules|join(' / ') or '—'}} · 拒绝 {{c.conflict.deny_rules|join(' / ') or '—'}} · 冲突 {{'是' if c.conflict.conflict else '否'}}</small></p>
+      <p><b>分区准入</b><small>分区 {{selected.partition}} · 合法 {{'是' if c.partition.valid else '否'}} · 预期 {{c.partition.expected}} · {{c.partition.result}}</small></p>
+      <p><b>归档证据</b><small>可导出 {{'是' if c.archive.ready else '否'}} · 材料摘要 {{c.archive.material_sha256[:16]}} · 结论 {{c.archive.status}}</small></p>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>$ material --original</h2><span>原样留存</span></div>
+    <div class="panel__body"><div class="reason-row"><span>{{selected.exception_id}}</span><div>{{selected.approval_material.material}}</div></div>
+      <div class="metric"><span>批准时刻</span><b>{{selected.approval_material.approved_at}}</b></div>
+      <div class="metric"><span>说明</span><b>{{selected.approval_material.note or '—'}}</b></div></div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>$ owner --confirm</h2><span>负责人本人</span></div>
+    <div class="panel__body">
+      {% if selected.status=='pending_owner_confirmation' %}
+      <div class="command"><input id="owner" placeholder="负责人标识" aria-label="负责人"><button id="owner-allow" class="primary">本人确认放行</button><button id="owner-deny">驳回</button><span id="confirm-output" role="status"></span></div>
+      {% else %}<div class="empty">当前无需负责人确认；{{selected.status_label}}。</div>{% endif %}
+    </div>
+  </section>
+</div>
+{% else %}<div class="empty">暂无代理例外。</div>{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+(()=>{const out=document.querySelector('#output');const id={{ (selected.exception_id if selected else None)|tojson }};
+const post=async(path,body,status)=>{if(status)status.textContent='提交中';try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const d=await r.json();if(!r.ok)throw Error(d.message||d.code);location.reload();}catch(e){if(status)status.textContent=e.message;else if(out)out.textContent=e.message;}};
+document.querySelector('#publish')?.addEventListener('click',()=>post('/api/exceptions/'+id+'/publish',{},out));
+document.querySelector('#owner-allow')?.addEventListener('click',()=>post('/api/exceptions/'+id+'/confirm',{owner:document.querySelector('#owner').value,decision:'allow'},document.querySelector('#confirm-output')));
+document.querySelector('#owner-deny')?.addEventListener('click',()=>post('/api/exceptions/'+id+'/confirm',{owner:document.querySelector('#owner').value,decision:'deny'},document.querySelector('#confirm-output')));
+})();
+</script>
+{% endblock %}
